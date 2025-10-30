@@ -1,6 +1,6 @@
 public class CaseTriggerHandler {
 
-    private static final String RECIPIENT_EMAIL = 'ben.hill@endowance.com';
+    private static final String RECIPIENT_EMAIL = 'jerhen.ertel@endowance.com';
 
     public static void handleAfterUpdate(Map<Id, Case> oldCaseMap, Map<Id, Case> newCaseMap) {
         List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
