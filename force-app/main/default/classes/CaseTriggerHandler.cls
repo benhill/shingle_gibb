@@ -1,9 +1,27 @@
 public class CaseTriggerHandler {
 
-    private static final String RECIPIENT_EMAIL = 'jerhen.ertel@endowance.com';
-
     public static void handleAfterUpdate(Map<Id, Case> oldCaseMap, Map<Id, Case> newCaseMap) {
         List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
+
+        // Collect all user IDs from case owners and case teams
+        Set<Id> userIds = new Set<Id>();
+        for (Case caseRecord : newCaseMap.values()) {
+            userIds.add(caseRecord.OwnerId);
+        }
+
+        // Query case team members
+        List<CaseTeamMember> caseTeamMembers = [
+            SELECT MemberId, ParentId FROM CaseTeamMember WHERE ParentId IN :newCaseMap.keySet()
+        ];
+        for (CaseTeamMember ctm : caseTeamMembers) {
+            userIds.add(ctm.MemberId);
+        }
+
+        // Query user emails
+        Map<Id, String> userEmails = new Map<Id, String>();
+        for (User u : [SELECT Id, Email FROM User WHERE Id IN :userIds]) {
+            userEmails.put(u.Id, u.Email);
+        }
 
         for (Id caseId : newCaseMap.keySet()) {
             Case oldCase = oldCaseMap.get(caseId);
@@ -12,8 +30,25 @@ public class CaseTriggerHandler {
             List<FieldChange> changes = getFieldChanges(oldCase, newCase);
 
             if (!changes.isEmpty()) {
-                Messaging.SingleEmailMessage email = buildEmail(newCase, changes);
-                emails.add(email);
+                // Get emails for case owner and team members
+                Set<String> recipientEmails = new Set<String>();
+
+                // Add case owner email
+                if (userEmails.containsKey(newCase.OwnerId)) {
+                    recipientEmails.add(userEmails.get(newCase.OwnerId));
+                }
+
+                // Add case team member emails
+                for (CaseTeamMember ctm : caseTeamMembers) {
+                    if (ctm.ParentId == caseId && userEmails.containsKey(ctm.MemberId)) {
+                        recipientEmails.add(userEmails.get(ctm.MemberId));
+                    }
+                }
+
+                if (!recipientEmails.isEmpty()) {
+                    Messaging.SingleEmailMessage email = buildEmail(newCase, changes, new List<String>(recipientEmails));
+                    emails.add(email);
+                }
             }
         }
 
@@ -83,10 +118,10 @@ public class CaseTriggerHandler {
         return String.valueOf(value);
     }
 
-    private static Messaging.SingleEmailMessage buildEmail(Case caseRecord, List<FieldChange> changes) {
+    private static Messaging.SingleEmailMessage buildEmail(Case caseRecord, List<FieldChange> changes, List<String> recipientEmails) {
         Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
 
-        email.setToAddresses(new String[] { RECIPIENT_EMAIL });
+        email.setToAddresses(recipientEmails);
         email.setSubject('Case Updated: ' + caseRecord.CaseNumber + ' - ' + (String.isNotBlank(caseRecord.Subject) ? caseRecord.Subject : 'No Subject'));
 
         String htmlBody = buildHtmlBody(caseRecord, changes);
